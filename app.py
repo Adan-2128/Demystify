@@ -6,6 +6,10 @@ import io
 import hashlib
 import logging
 import re
+import urllib.request
+import tarfile
+import tempfile
+import shutil
 from flask import (
     Flask, request, jsonify, redirect, url_for, send_file, render_template, session
 )
@@ -16,7 +20,6 @@ from flask_login import (
 from dotenv import load_dotenv
 from datetime import datetime
 from fpdf import FPDF
-from io import BytesIO
 from flask_session import Session
 
 # --- Library Imports ---
@@ -66,6 +69,34 @@ def load_user(user_id):
     if user_data:
         return User(user_id, user_data['username'], user_data['password_hash'])
     return None
+
+# --- Font Setup (Download once at startup) ---
+FONT_DIR = os.path.join(app.root_path, 'fonts')
+os.makedirs(FONT_DIR, exist_ok=True)
+REGULAR_FONT = os.path.join(FONT_DIR, 'DejaVuSans.ttf')
+BOLD_FONT = os.path.join(FONT_DIR, 'DejaVuSans-Bold.ttf')
+
+def download_dejavu_fonts():
+    if os.path.exists(REGULAR_FONT) and os.path.exists(BOLD_FONT):
+        return  # Already present
+
+    url = "https://github.com/dejavu-fonts/dejavu-fonts/releases/download/version_2_37/dejavu-fonts-ttf-2.37.tar.bz2"
+    print("Downloading DejaVu fonts at startup for proper ₹ symbol support...")
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            tar_path = os.path.join(tmp, "dejavu.tar.bz2")
+            urllib.request.urlretrieve(url, tar_path)
+            with tarfile.open(tar_path, "r:bz2") as tar:
+                tar.extractall(path=tmp)
+            src_dir = os.path.join(tmp, "dejavu-fonts-ttf-2.37", "ttf")
+            shutil.copy(os.path.join(src_dir, "DejaVuSans.ttf"), REGULAR_FONT)
+            shutil.copy(os.path.join(src_dir, "DejaVuSans-Bold.ttf"), BOLD_FONT)
+        print("DejaVu fonts downloaded successfully!")
+    except Exception as e:
+        print(f"Font download failed: {e}. PDFs will fall back to Helvetica (₹ may appear broken).")
+
+# Run font download once when the app starts
+download_dejavu_fonts()
 
 # --- Utility Functions ---
 def add_to_history(username, activity_type, content, result=None):
@@ -118,7 +149,7 @@ def run_translation_task(task_id, user_id, content, languages, is_file):
         }
         
         translations = {}
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
 
         for lang_code in languages:
             try:
@@ -180,10 +211,7 @@ def login():
         password = request.form.get('password')
         user_data = users.get(username)
         if user_data and check_password_hash(user_data['password_hash'], password):
-            
-            # --- MODIFIED: Clear any old session data before logging in ---
             session.clear()
-            
             user = User(id=username, username=username, password_hash=user_data['password_hash'])
             login_user(user)
             return jsonify({'message': 'Login successful'}), 200
@@ -218,7 +246,7 @@ def demystify_api():
     if error or not text:
         return jsonify({'error': error or 'No text or file provided'}), 400
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         explanation_prompt = f"Explain the following legal text in simple, clear terms for a non-lawyer:\n\n{text}"
         explanation_response = model.generate_content(explanation_prompt)
         mindmap_prompt = f"""Analyze the legal text and generate a concise mind map as a JSON object. Focus on the 4-6 most critical themes. The JSON must have a 'title' and a 'children' array. Example: {{"title": "Summary", "children": [{{"title": "Theme 1"}}]}}. Provide only the JSON object. Text:\n\n{text}"""
@@ -298,7 +326,7 @@ def chat_api():
         """
         
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         response = model.generate_content(prompt)
         return jsonify({'response': response.text})
     except Exception as e:
@@ -368,7 +396,7 @@ def compare_clauses_api():
         return jsonify({'error': 'Document text is required.'}), 400
 
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         prompt = f"""
         You are a legal document analyst. Compare the provided "User's Document" against standard principles for a residential rental agreement in India.
         Analyze and identify three categories, responding in a valid JSON format.
@@ -397,7 +425,7 @@ def draft_clause_api():
         return jsonify({'error': 'Clause description is required.'}), 400
 
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         prompt = f"""
         As a legal assistant, draft a standard, clear, and fair legal clause for a rental agreement based on the following user request.
         The clause should be legally sound for a typical residential tenancy in India.
@@ -416,50 +444,70 @@ def draft_clause_api():
 @login_required
 def draft_pdf_route():
     data = request.form
-    additional_clauses = data.get('additional_clauses', '')
+    additional_clauses = data.get('additional_clauses', '').strip()
 
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 10, "RENTAL AGREEMENT", ln=True, align='C')
+    pdf.set_auto_page_break(auto=True, margin=15)
+
+    # Use pre-downloaded DejaVu fonts if available
+    use_dejavu = False
+    if os.path.exists(REGULAR_FONT):
+        pdf.add_font('DejaVu', '', REGULAR_FONT, uni=True)
+        pdf.add_font('DejaVu', 'B', BOLD_FONT if os.path.exists(BOLD_FONT) else REGULAR_FONT, uni=True)
+        use_dejavu = True
+
+    # Title
+    pdf.set_font('DejaVu' if use_dejavu else 'Helvetica', 'B', 18)
+    pdf.cell(0, 15, 'RENTAL AGREEMENT', ln=True, align='C')
     pdf.ln(10)
 
-    pdf.set_font("Helvetica", "", 12)
-    pdf.multi_cell(0, 8, f"This Rental Agreement is made on this day, {data.get('agreement_date', '_________')},", ln=True)
-    pdf.ln(5)
-    pdf.multi_cell(0, 8, f"BETWEEN: {data.get('landlord_name', '[Landlord Name]')} (hereinafter referred to as the \"LANDLORD\").", ln=True)
-    pdf.ln(5)
-    pdf.multi_cell(0, 8, f"AND: {data.get('tenant_name', '[Tenant Name]')} (hereinafter referred to as the \"TENANT\").", ln=True)
-    pdf.ln(10)
-    pdf.multi_cell(0, 8, f"The landlord agrees to rent to the tenant the property located at: {data.get('property_address', '[Property Address]')}.", ln=True)
-    pdf.ln(10)
+    # Body
+    pdf.set_font('DejaVu' if use_dejavu else 'Helvetica', size=12)
+    pdf.multi_cell(0, 10, f"This Rental Agreement is made on {data.get('agreement_date', '____________')}")
 
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.multi_cell(0, 8, f"1. TERM: The term of this lease shall be for {data.get('term_months', 11)} months.", ln=True)
-    pdf.multi_cell(0, 8, f"2. RENT: The monthly rent shall be Rs. {data.get('rent_amount', 0)}/-.", ln=True)
-    pdf.multi_cell(0, 8, f"3. DEPOSIT: The tenant has paid a security deposit of Rs. {data.get('deposit_amount', 0)}/-.", ln=True)
-    
+    pdf.ln(8)
+    pdf.multi_cell(0, 10, "BETWEEN")
+    pdf.set_font('DejaVu' if use_dejavu else 'Helvetica', 'B', 12)
+    pdf.multi_cell(0, 10, f"{data.get('landlord_name', '________________________')} (LANDLORD)")
+    pdf.set_font('DejaVu' if use_dejavu else 'Helvetica', size=12)
+    pdf.ln(5)
+    pdf.multi_cell(0, 10, "AND")
+    pdf.set_font('DejaVu' if use_dejavu else 'Helvetica', 'B', 12)
+    pdf.multi_cell(0, 10, f"{data.get('tenant_name', '________________________')} (TENANT)")
+
+    pdf.ln(12)
+    pdf.set_font('DejaVu' if use_dejavu else 'Helvetica', size=12)
+    pdf.multi_cell(0, 10, f"Property: {data.get('property_address', 'Full Address')}")
+
+    pdf.ln(12)
+    pdf.set_font('DejaVu' if use_dejavu else 'Helvetica', 'B', 13)
+    pdf.multi_cell(0, 10, f"1. Lease Term       : {data.get('term_months', '11')} months")
+    pdf.multi_cell(0, 10, f"2. Monthly Rent     : ₹ {data.get('rent_amount', '0')}/-")
+    pdf.multi_cell(0, 10, f"3. Security Deposit : ₹ {data.get('deposit_amount', '0')}/-")
+
     if additional_clauses:
-        pdf.ln(5)
-        pdf.set_font("Helvetica", "", 12)
-        pdf.multi_cell(0, 8, additional_clauses, ln=True)
+        pdf.ln(10)
+        pdf.set_font('DejaVu' if use_dejavu else 'Helvetica', size=11)
+        import textwrap
+        for line in additional_clauses.split('\n'):
+            if line.strip():
+                pdf.multi_cell(0, 8, textwrap.fill(line, width=100))
 
-    pdf.ln(20)
-    pdf.multi_cell(0, 8, "IN WITNESS WHEREOF, the parties have executed this agreement.", ln=True)
-    pdf.ln(20)
+    pdf.ln(30)
+    pdf.set_font('DejaVu' if use_dejavu else 'Helvetica', size=12)
+    pdf.multi_cell(0, 10, "IN WITNESS WHEREOF, the parties have signed this agreement.")
 
-    pdf.multi_cell(0, 8, "_________________________")
-    pdf.multi_cell(0, 8, f"LANDLORD ({data.get('landlord_name', '')})", ln=True)
-    pdf.ln(20)
-    pdf.multi_cell(0, 8, "_________________________")
-    pdf.multi_cell(0, 8, f"TENANT ({data.get('tenant_name', '')})", ln=True)
+    pdf.ln(35)
+    pdf.multi_cell(0, 10, "_____________________________          _____________________________")
+    pdf.multi_cell(0, 10, "LANDLORD                                                 TENANT")
 
-    buffer = BytesIO()
-    pdf.output(buffer)
-    buffer.seek(0)
+    # Output as clean bytes
+    pdf_string = pdf.output(dest='S')              # Gets the PDF as string
+    pdf_bytes = pdf_string.encode('latin-1')
 
     return send_file(
-        buffer,
+        io.BytesIO(pdf_bytes),
         as_attachment=True,
         download_name="Rental_Agreement.pdf",
         mimetype="application/pdf"
@@ -476,7 +524,7 @@ def extract_key_dates_api():
         return jsonify({'error': error or 'No text or file provided'}), 400
 
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         prompt = f"""
         Analyze the following legal document and extract all key dates.
         For each date found, identify its legal significance (e.g., "Agreement Start Date", "Lease Expiry Date", "Notice Date").
