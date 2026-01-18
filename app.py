@@ -625,6 +625,15 @@ Return ONLY valid JSON in this exact structure:
   ]
 }}
 """
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        response = model.generate_content(system_prompt)
+        cleaned_response = response.text.strip().replace('```json', '').replace('```', '')
+        clauses_result = json.loads(cleaned_response)
+        
+        return jsonify(clauses_result)
+    except Exception as e:
+        logging.error(f"Clause generation failed: {str(e)}")
+        return jsonify({'error': f'AI clause generation failed: {str(e)}'}), 500
 
 @app.route('/api/extract_key_dates', methods=['POST'])
 @login_required
