@@ -436,30 +436,6 @@ def compare_clauses_api():
         logging.error(f"Clause comparison failed: {str(e)}")
         return jsonify({'error': f'AI analysis failed: {str(e)}'}), 500
 
-@app.route('/api/draft_clause', methods=['POST'])
-@login_required
-def draft_clause_api():
-    data = request.get_json()
-    description = data.get('description')
-    if not description:
-        return jsonify({'error': 'Clause description is required.'}), 400
-
-    try:
-        model = genai.GenerativeModel('gemini-2.5-flash')
-        prompt = f"""
-        As a legal assistant, draft a standard, clear, and fair legal clause for a rental agreement based on the following user request.
-        The clause should be legally sound for a typical residential tenancy in India.
-        Provide only the numbered clause text as the output.
-        User Request: "{description}"
-        """
-        response = model.generate_content(prompt)
-        clause_number_prefix = "4." 
-        return jsonify({'clause': f"{clause_number_prefix} {response.text.strip()}"})
-
-    except Exception as e:
-        logging.error(f"Clause drafting failed: {str(e)}")
-        return jsonify({'error': f'AI clause drafting failed: {str(e)}'}), 500
-
 @app.route('/draft_pdf', methods=['POST'])
 @login_required
 def draft_pdf_route():
@@ -478,72 +454,109 @@ def draft_pdf_route():
 
     font_family = 'DejaVu' if use_dejavu else 'Helvetica'
 
-    # ─── Helper ────────────────────────────────────────
-    def safe_name(name, max_chars=70):
-        name = str(name or '________________________')
-        if len(name) > max_chars:
-            return name[:max_chars-3] + '...'
-        return name
+    # ─── Safety constants ─────────────────────────────────────
+    PAGE_WIDTH_MM = 210
+    MARGIN = 15
+    MAX_CONTENT_WIDTH = PAGE_WIDTH_MM - 2 * MARGIN  # ≈ 180mm
+    MAX_NAME_WIDTH = 170                           # very safe value
+    MAX_NAME_DISPLAY_LENGTH = 65                   # characters
 
-    # ─── Content ────────────────────────────────────────
+    # ─── Helper function for safe name printing ───────────────
+    def print_centered_bold_name(pdf, raw_name, suffix="(LANDLORD)", width=MAX_NAME_WIDTH):
+        name = (raw_name or "________________________").strip()
+        
+        # Truncate extremely long names
+        if len(name) > MAX_NAME_DISPLAY_LENGTH:
+            name = name[:MAX_NAME_DISPLAY_LENGTH - 3] + "..."
+            
+        full_line = f"{name} {suffix}"
+        
+        pdf.set_font(font_family, 'B', 12)
+        pdf.multi_cell(width, 10, full_line, align='C')
+
+    # ─── Document content starts here ──────────────────────────
+    # Title
     pdf.set_font(font_family, 'B', 18)
     pdf.cell(0, 15, 'RENTAL AGREEMENT', ln=True, align='C')
+    pdf.ln(12)
+
+    # Opening sentence
+    pdf.set_font(font_family, '', 12)
+    pdf.multi_cell(MAX_CONTENT_WIDTH, 10,
+                   f"This Rental Agreement is made on {data.get('agreement_date', '____________')}",
+                   align='L')
+
     pdf.ln(10)
+    pdf.multi_cell(MAX_CONTENT_WIDTH, 10, "BETWEEN", align='C')
 
-    pdf.set_font(font_family, size=12)
-    pdf.multi_cell(0, 10, f"This Rental Agreement is made on {data.get('agreement_date', '____________')}")
+    # Landlord name
+    print_centered_bold_name(pdf, data.get('landlord_name'), "(LANDLORD)")
 
-    pdf.ln(8)
-    pdf.multi_cell(0, 10, "BETWEEN")
+    pdf.set_font(font_family, '', 12)
+    pdf.ln(6)
+    pdf.multi_cell(MAX_CONTENT_WIDTH, 10, "AND", align='C')
 
-    pdf.set_font(font_family, 'B', 12)
-    pdf.multi_cell(0, 10,
-                   f"{safe_name(data.get('landlord_name'))} (LANDLORD)",
-                   align='C')
+    # Tenant name
+    print_centered_bold_name(pdf, data.get('tenant_name'), "(TENANT)")
 
-    pdf.set_font(font_family, size=12)
-    pdf.ln(5)
-    pdf.multi_cell(0, 10, "AND")
+    pdf.ln(14)
 
-    pdf.set_font(font_family, 'B', 12)
-    pdf.multi_cell(0, 10,
-                   f"{safe_name(data.get('tenant_name'))} (TENANT)",
-                   align='C')
-
-    pdf.ln(12)
-    pdf.set_font(font_family, size=12)
-    pdf.multi_cell(0, 10, f"Property: {data.get('property_address', 'Full Address')}")
+    # Property
+    pdf.set_font(font_family, '', 12)
+    pdf.multi_cell(MAX_CONTENT_WIDTH, 10,
+                   f"Property: {data.get('property_address', 'Full Address of the Property')}",
+                   align='L')
 
     pdf.ln(12)
+
+    # Key terms
     pdf.set_font(font_family, 'B', 13)
-    pdf.multi_cell(0, 10, f"1. Lease Term       : {data.get('term_months', '11')} months")
-    pdf.multi_cell(0, 10, f"2. Monthly Rent     : ₹ {data.get('rent_amount', '0')}/-")
-    pdf.multi_cell(0, 10, f"3. Security Deposit : ₹ {data.get('deposit_amount', '0')}/-")
+    pdf.multi_cell(MAX_CONTENT_WIDTH, 11,
+                   f"1. Lease Term          : {data.get('term_months', '11')} months",
+                   align='L')
+    pdf.multi_cell(MAX_CONTENT_WIDTH, 11,
+                   f"2. Monthly Rent        : ₹ {data.get('rent_amount', '0')}/-",
+                   align='L')
+    pdf.multi_cell(MAX_CONTENT_WIDTH, 11,
+                   f"3. Security Deposit    : ₹ {data.get('deposit_amount', '0')}/-",
+                   align='L')
 
+    # Additional clauses
     if additional_clauses:
-        pdf.ln(10)
-        pdf.set_font(font_family, size=11)
+        pdf.ln(14)
+        pdf.set_font(font_family, '', 11)
+        
         import textwrap
         for line in additional_clauses.splitlines():
             line = line.strip()
             if line:
-                pdf.multi_cell(0, 8, textwrap.fill(line, width=95))
+                wrapped = textwrap.fill(line, width=95)
+                pdf.multi_cell(MAX_CONTENT_WIDTH, 8, wrapped, align='L')
 
-    pdf.ln(30)
-    pdf.set_font(font_family, size=12)
-    pdf.multi_cell(0, 10, "IN WITNESS WHEREOF, the parties have signed this agreement.")
+    # Closing
+    pdf.ln(28)
+    pdf.set_font(font_family, '', 12)
+    pdf.multi_cell(MAX_CONTENT_WIDTH, 10,
+                   "IN WITNESS WHEREOF, the parties hereto have executed this agreement on the day and year first above written.",
+                   align='L')
 
     pdf.ln(35)
-    pdf.multi_cell(0, 10, "_____________________________          _____________________________")
-    pdf.multi_cell(0, 10, "LANDLORD                                                 TENANT")
 
-    # Output
+    pdf.set_font(font_family, '', 12)
+    pdf.multi_cell(MAX_CONTENT_WIDTH, 10,
+                   "_____________________________                  _____________________________",
+                   align='C')
+    pdf.multi_cell(MAX_CONTENT_WIDTH, 10,
+                   "LANDLORD                                                            TENANT",
+                   align='C')
+
+    # ─── Output ────────────────────────────────────────────────
     pdf_bytes = pdf.output(dest='S').encode('latin-1')
 
     return send_file(
         io.BytesIO(pdf_bytes),
         as_attachment=True,
-        download_name="Rental_Agreement.pdf",
+        download_name="Rental_Agreement_Draft.pdf",
         mimetype="application/pdf"
     )
 
