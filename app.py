@@ -469,6 +469,7 @@ def draft_pdf_route():
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
+               # ← explicit width is more reliable anyway
 
     # Use pre-downloaded DejaVu fonts if available
     use_dejavu = False
@@ -489,12 +490,12 @@ def draft_pdf_route():
     pdf.ln(8)
     pdf.multi_cell(0, 10, "BETWEEN")
     pdf.set_font('DejaVu' if use_dejavu else 'Helvetica', 'B', 12)
-    pdf.multi_cell(0, 10, f"{data.get('landlord_name', '________________________')} (LANDLORD)")
+    pdf.multi_cell(0, 10, f"{data.get('landlord_name', '________________________')} (LANDLORD)",align='C')
     pdf.set_font('DejaVu' if use_dejavu else 'Helvetica', size=12)
     pdf.ln(5)
     pdf.multi_cell(0, 10, "AND")
     pdf.set_font('DejaVu' if use_dejavu else 'Helvetica', 'B', 12)
-    pdf.multi_cell(0, 10, f"{data.get('tenant_name', '________________________')} (TENANT)")
+    pdf.multi_cell(0, 10, f"{data.get('tenant_name', '________________________')} (TENANT)",align='C')
 
     pdf.ln(12)
     pdf.set_font('DejaVu' if use_dejavu else 'Helvetica', size=12)
