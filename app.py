@@ -440,118 +440,156 @@ def compare_clauses_api():
 @login_required
 def draft_pdf_route():
     data = request.form
-    additional_clauses = data.get('additional_clauses', '').strip()
+    
+    # Extract form data with safe defaults
+    agreement_date   = data.get('agreement_date', '____________').strip()
+    landlord_name    = data.get('landlord_name', '').strip()
+    tenant_name      = data.get('tenant_name', '').strip()
+    property_address = data.get('property_address', 'Full Address of the Property').strip()
+    term_months      = data.get('term_months', '11').strip()
+    rent_amount      = data.get('rent_amount', '0').strip()
+    deposit_amount   = data.get('deposit_amount', '0').strip()
+    additional_clauses_raw = data.get('additional_clauses', '').strip()
 
+    # ─── PDF Setup ───────────────────────────────────────────────────────────
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_auto_page_break(auto=True, margin=20)
 
-    # Font setup
-    use_dejavu = os.path.exists(REGULAR_FONT)
-    if use_dejavu:
-        pdf.add_font('DejaVu', '', REGULAR_FONT, uni=True)
-        pdf.add_font('DejaVu', 'B', BOLD_FONT if os.path.exists(BOLD_FONT) else REGULAR_FONT, uni=True)
-
+    # Font setup - try DejaVu first, fallback to Helvetica
+    use_dejavu = os.path.exists(REGULAR_FONT) and os.path.exists(BOLD_FONT)
     font_family = 'DejaVu' if use_dejavu else 'Helvetica'
 
-    # ─── Safety constants ─────────────────────────────────────
-    PAGE_WIDTH_MM = 210
-    MARGIN = 15
-    MAX_CONTENT_WIDTH = PAGE_WIDTH_MM - 2 * MARGIN  # ≈ 180mm
-    MAX_NAME_WIDTH = 170                           # very safe value
-    MAX_NAME_DISPLAY_LENGTH = 65                   # characters
+    if use_dejavu:
+        pdf.add_font('DejaVu', '', REGULAR_FONT, uni=True)
+        pdf.add_font('DejaVu', 'B', BOLD_FONT, uni=True)
 
-    # ─── Helper function for safe name printing ───────────────
-    def print_centered_bold_name(pdf, raw_name, suffix="(LANDLORD)", width=MAX_NAME_WIDTH):
-        name = (raw_name or "________________________").strip()
-        
-        # Truncate extremely long names
-        if len(name) > MAX_NAME_DISPLAY_LENGTH:
-            name = name[:MAX_NAME_DISPLAY_LENGTH - 3] + "..."
-            
-        full_line = f"{name} {suffix}"
-        
-        pdf.set_font(font_family, 'B', 12)
-        pdf.multi_cell(width, 10, full_line, align='C')
+    # Constants
+    PAGE_WIDTH_MM    = 210
+    MARGIN           = 18
+    CONTENT_WIDTH    = PAGE_WIDTH_MM - 2 * MARGIN
+    NAME_MAX_WIDTH   = 170
+    NAME_MAX_CHARS   = 68
 
-    # ─── Document content starts here ──────────────────────────
+    # ─── Helper Functions ────────────────────────────────────────────────────
+    def clean_name(name):
+        name = (name or "________________________").strip()
+        if len(name) > NAME_MAX_CHARS:
+            name = name[:NAME_MAX_CHARS-3] + "..."
+        return name
+
+    def print_centered_bold_name(pdf, name, suffix="(LANDLORD)"):
+        name = clean_name(name)
+        full_text = f"{name} {suffix}"
+        pdf.set_font(font_family, 'B', 13)
+        pdf.multi_cell(NAME_MAX_WIDTH, 11, full_text, align='C')
+
+    def print_section_title(pdf, title):
+        pdf.set_font(font_family, 'B', 14)
+        pdf.cell(0, 12, title, ln=True, align='L')
+        pdf.ln(2)
+
+    def print_normal_text(pdf, text, size=11.5, ln_after=6):
+        pdf.set_font(font_family, '', size)
+        pdf.multi_cell(CONTENT_WIDTH, 7, text, align='L')
+        pdf.ln(ln_after)
+
+    # ─── Document Content ────────────────────────────────────────────────────
+
     # Title
-    pdf.set_font(font_family, 'B', 18)
-    pdf.cell(0, 15, 'RENTAL AGREEMENT', ln=True, align='C')
-    pdf.ln(12)
-
-    # Opening sentence
-    pdf.set_font(font_family, '', 12)
-    pdf.multi_cell(MAX_CONTENT_WIDTH, 10,
-                   f"This Rental Agreement is made on {data.get('agreement_date', '____________')}",
-                   align='L')
-
+    pdf.set_font(font_family, 'B', 19)
+    pdf.cell(0, 16, 'RENTAL AGREEMENT', ln=True, align='C')
     pdf.ln(10)
-    pdf.multi_cell(MAX_CONTENT_WIDTH, 10, "BETWEEN", align='C')
 
-    # Landlord name
-    print_centered_bold_name(pdf, data.get('landlord_name'), "(LANDLORD)")
+    # Opening
+    print_normal_text(pdf,
+        f"This Rental Agreement (hereinafter referred to as the \"Agreement\") "
+        f"is made and entered into on {agreement_date}",
+        size=12, ln_after=10
+    )
 
     pdf.set_font(font_family, '', 12)
+    pdf.cell(0, 10, "BETWEEN", ln=True, align='C')
+    pdf.ln(4)
+
+    # Parties
+    print_centered_bold_name(pdf, landlord_name, "(hereinafter referred to as the \"LANDLORD\")")
     pdf.ln(6)
-    pdf.multi_cell(MAX_CONTENT_WIDTH, 10, "AND", align='C')
 
-    # Tenant name
-    print_centered_bold_name(pdf, data.get('tenant_name'), "(TENANT)")
+    pdf.set_font(font_family, '', 12)
+    pdf.cell(0, 8, "AND", ln=True, align='C')
+    pdf.ln(4)
 
+    print_centered_bold_name(pdf, tenant_name, "(hereinafter referred to as the \"TENANT\")")
     pdf.ln(14)
 
     # Property
-    pdf.set_font(font_family, '', 12)
-    pdf.multi_cell(MAX_CONTENT_WIDTH, 10,
-                   f"Property: {data.get('property_address', 'Full Address of the Property')}",
-                   align='L')
+    print_section_title(pdf, "1. PROPERTY")
+    print_normal_text(pdf, f"The Landlord agrees to rent to the Tenant the following property:\n\n{property_address}")
+
+    # Key Commercial Terms
+    print_section_title(pdf, "2. KEY COMMERCIAL TERMS")
+    
+    pdf.set_font(font_family, '', 11.5)
+    pdf.multi_cell(CONTENT_WIDTH, 8,
+        f"• Lease Term          : {term_months} months\n"
+        f"• Commencement Date   : To be mutually agreed / {agreement_date}\n"
+        f"• Monthly Rent        : ₹ {rent_amount}/- (Rupees {rent_amount} only)\n"
+        f"• Security Deposit    : ₹ {deposit_amount}/- (refundable subject to terms)\n"
+        f"• Payment Due Date    : On or before 5th of every calendar month",
+        align='L'
+    )
+    pdf.ln(10)
+
+    # Additional Clauses / Clause Drafter Section
+    if additional_clauses_raw.strip():
+        print_section_title(pdf, "3. ADDITIONAL TERMS & CONDITIONS")
+
+        # Split clauses - better handling of input
+        clauses = [c.strip() for c in additional_clauses_raw.split('\n') if c.strip()]
+        
+        pdf.set_font(font_family, '', 11)
+        for i, clause in enumerate(clauses, 1):
+            # Number each clause
+            clause_text = f"{i}. {clause}"
+            # Smart wrapping
+            lines = []
+            current = ""
+            for word in clause_text.split():
+                if len(current) + len(word) + 1 > 95:
+                    lines.append(current)
+                    current = word
+                else:
+                    current = (current + " " + word).strip()
+            if current:
+                lines.append(current)
+            
+            for line in lines:
+                pdf.multi_cell(CONTENT_WIDTH, 7, line, align='L')
+            pdf.ln(4)
+
+    # Standard Closing Clause
+    pdf.ln(18)
+    print_normal_text(pdf,
+        "IN WITNESS WHEREOF the parties hereto have set their hands to this Agreement "
+        "on the day and year first above written.",
+        size=11.5, ln_after=20
+    )
+
+    # Signature lines
+    pdf.set_font(font_family, '', 11)
+    pdf.cell(CONTENT_WIDTH/2 - 5, 10, "______________________________", ln=0, align='C')
+    pdf.cell(CONTENT_WIDTH/2 - 5, 10, "______________________________", ln=1, align='C')
+    
+    pdf.cell(CONTENT_WIDTH/2 - 5, 8, "LANDLORD", ln=0, align='C')
+    pdf.cell(CONTENT_WIDTH/2 - 5, 8, "TENANT", ln=1, align='C')
 
     pdf.ln(12)
+    pdf.set_font(font_family, 'I', 9)
+    pdf.cell(0, 8, "Note: This is a computer-generated draft. Please consult a legal professional before execution.", ln=1, align='C')
 
-    # Key terms
-    pdf.set_font(font_family, 'B', 13)
-    pdf.multi_cell(MAX_CONTENT_WIDTH, 11,
-                   f"1. Lease Term          : {data.get('term_months', '11')} months",
-                   align='L')
-    pdf.multi_cell(MAX_CONTENT_WIDTH, 11,
-                   f"2. Monthly Rent        : ₹ {data.get('rent_amount', '0')}/-",
-                   align='L')
-    pdf.multi_cell(MAX_CONTENT_WIDTH, 11,
-                   f"3. Security Deposit    : ₹ {data.get('deposit_amount', '0')}/-",
-                   align='L')
-
-    # Additional clauses
-    if additional_clauses:
-        pdf.ln(14)
-        pdf.set_font(font_family, '', 11)
-        
-        import textwrap
-        for line in additional_clauses.splitlines():
-            line = line.strip()
-            if line:
-                wrapped = textwrap.fill(line, width=95)
-                pdf.multi_cell(MAX_CONTENT_WIDTH, 8, wrapped, align='L')
-
-    # Closing
-    pdf.ln(28)
-    pdf.set_font(font_family, '', 12)
-    pdf.multi_cell(MAX_CONTENT_WIDTH, 10,
-                   "IN WITNESS WHEREOF, the parties hereto have executed this agreement on the day and year first above written.",
-                   align='L')
-
-    pdf.ln(35)
-
-    pdf.set_font(font_family, '', 12)
-    pdf.multi_cell(MAX_CONTENT_WIDTH, 10,
-                   "_____________________________                  _____________________________",
-                   align='C')
-    pdf.multi_cell(MAX_CONTENT_WIDTH, 10,
-                   "LANDLORD                                                            TENANT",
-                   align='C')
-
-    # ─── Output ────────────────────────────────────────────────
-    pdf_bytes = pdf.output(dest='S')
+    # ─── Generate & Send ─────────────────────────────────────────────────────
+    pdf_bytes = pdf.output(dest='S').encode('latin-1', errors='ignore')
 
     return send_file(
         io.BytesIO(pdf_bytes),
@@ -559,6 +597,7 @@ def draft_pdf_route():
         download_name="Rental_Agreement_Draft.pdf",
         mimetype="application/pdf"
     )
+
 
 @app.route('/api/extract_key_dates', methods=['POST'])
 @login_required
