@@ -551,7 +551,7 @@ def draft_pdf_route():
                    align='C')
 
     # ─── Output ────────────────────────────────────────────────
-    pdf_bytes = pdf.output(dest='S').encode('latin-1')
+    pdf_bytes = pdf.output(dest='S')
 
     return send_file(
         io.BytesIO(pdf_bytes),
