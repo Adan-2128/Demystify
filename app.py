@@ -30,6 +30,22 @@ import pdfplumber
 # --- Basic Setup ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 app = Flask(__name__)
+app.config.update(
+    SECRET_KEY = os.getenv("SECRET_KEY"),          # you already have this
+    SESSION_TYPE = 'filesystem',
+    SESSION_PERMANENT = False,
+    
+    # Very important security settings – add these:
+    SESSION_COOKIE_HTTPONLY    = True,
+    SESSION_COOKIE_SECURE      = True,          # ← change to False only during local dev without https
+    SESSION_COOKIE_SAMESITE    = 'Lax',         # 'Strict' is also fine, but 'Lax' is more practical
+    SESSION_COOKIE_NAME        = 'yourapp_session',   # optional – makes it harder to guess
+    PERMANENT_SESSION_LIFETIME = 3600 * 24 * 14,      # 14 days example
+    SESSION_REFRESH_EACH_REQUEST = True,
+)
+
+# Then continue with the rest...
+Session(app)
 
 # --- Configuration ---
 try:
@@ -173,6 +189,10 @@ def run_translation_task(task_id, user_id, content, languages, is_file):
 @login_required
 def index():
     return render_template('index.html')
+
+@app.route('/about')
+def about():
+    return render_template('about.html')
 
 @app.route('/demystify')
 @login_required

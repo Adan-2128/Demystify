@@ -7,10 +7,81 @@
     <title>Register for DemystiLex</title>
     <link href="/static/css/style.css" rel="stylesheet">
     <style>
-        /* This style block centers the navbar content specifically for this page */
-        
         .navbar .container {
             justify-content: center;
+        }
+        
+        .password-strength {
+            margin-top: 0.5rem;
+            font-size: 0.9rem;
+            min-height: 1.4rem;
+        }
+        
+        .strength-weak {
+            color: #e74c3c;
+        }
+        
+        .strength-fair {
+            color: #f39c12;
+        }
+        
+        .strength-good {
+            color: #27ae60;
+        }
+        
+        .strength-strong {
+            color: #2ecc71;
+            font-weight: 600;
+        }
+        
+        .strength-bar {
+            height: 4px;
+            margin-top: 6px;
+            background: #eee;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        
+        .strength-fill {
+            height: 100%;
+            width: 0%;
+            transition: width 0.4s ease;
+        }
+        
+        .fill-weak {
+            background: #e74c3c;
+        }
+        
+        .fill-fair {
+            background: #f39c12;
+        }
+        
+        .fill-good {
+            background: #27ae60;
+        }
+        
+        .fill-strong {
+            background: #2ecc71;
+        }
+        
+        .password-tips {
+            margin-top: 1rem;
+            padding: 0.8rem;
+            background: #fff3cd;
+            border: 1px solid #ffeeba;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            color: #856404;
+            display: none;
+        }
+        
+        .password-tips ul {
+            margin: 0.5rem 0 0.5rem 1.2rem;
+            padding: 0;
+        }
+        
+        .password-tips li {
+            margin-bottom: 0.35rem;
         }
     </style>
 </head>
@@ -31,17 +102,30 @@
         <div class="card form-card">
             <h2 class="form-title">Register</h2>
             <div id="feedback-message" class="feedback-message" style="display:none;"></div>
+
             <form method="POST" action="/register" id="register-form">
                 <div class="form-group">
                     <label for="username">Username</label>
                     <input type="text" id="username" name="username" placeholder="Choose a username" required>
                 </div>
+
                 <div class="form-group">
                     <label for="password">Password</label>
                     <input type="password" id="password" name="password" placeholder="Create a password" required>
+                    <div class="password-strength" id="password-strength-text"></div>
+                    <div class="strength-bar">
+                        <div class="strength-fill" id="strength-fill"></div>
+                    </div>
+
+                    <div class="password-tips" id="password-tips">
+                        <strong>Try adding these to make your password stronger:</strong>
+                        <ul id="suggestion-list"></ul>
+                    </div>
                 </div>
-                <button type="submit" id="register-button" class="btn-primary" style="width: 100%;">Register</button>
+
+                <button type="submit" id="register-button" class="btn-primary" style="width: 100%;" disabled>Register</button>
             </form>
+
             <p style="text-align: center; margin-top: 1.5rem;">Already have an account? <a href="/login">Login here</a></p>
         </div>
     </main>
@@ -52,7 +136,128 @@
         document.addEventListener('DOMContentLoaded', function() {
             const registerForm = document.getElementById('register-form');
             const registerButton = document.getElementById('register-button');
+            const passwordInput = document.getElementById('password');
             const feedbackMessage = document.getElementById('feedback-message');
+            const strengthText = document.getElementById('password-strength-text');
+            const strengthFill = document.getElementById('strength-fill');
+            const tipsBox = document.getElementById('password-tips');
+            const suggestionList = document.getElementById('suggestion-list');
+
+            const strengthLevels = [{
+                min: 0,
+                text: "",
+                class: "",
+                fillClass: "",
+                width: "0%"
+            }, {
+                min: 1,
+                text: "Very weak",
+                class: "weak",
+                fillClass: "fill-weak",
+                width: "20%"
+            }, {
+                min: 4,
+                text: "Weak",
+                class: "weak",
+                fillClass: "fill-weak",
+                width: "40%"
+            }, {
+                min: 6,
+                text: "Fair",
+                class: "fair",
+                fillClass: "fill-fair",
+                width: "60%"
+            }, {
+                min: 9,
+                text: "Good",
+                class: "good",
+                fillClass: "fill-good",
+                width: "80%"
+            }, {
+                min: 12,
+                text: "Strong 🔥",
+                class: "strong",
+                fillClass: "fill-strong",
+                width: "100%"
+            }];
+
+            const allSuggestions = [
+                "Use at least 12 characters",
+                "Add uppercase letters (A-Z)",
+                "Add lowercase letters (a-z)",
+                "Include numbers (0-9)",
+                "Add special characters (!@#$%^&*)"
+            ];
+
+            function calculatePasswordStrength(password) {
+                let score = 0;
+                const checks = {
+                    length8: password.length >= 8,
+                    length12: password.length >= 12,
+                    lowercase: /[a-z]/.test(password),
+                    uppercase: /[A-Z]/.test(password),
+                    number: /[0-9]/.test(password),
+                    special: /[^A-Za-z0-9]/.test(password)
+                };
+
+                if (checks.length8) score += 2;
+                if (checks.length12) score += 3;
+                if (checks.lowercase) score += 1;
+                if (checks.uppercase) score += 2;
+                if (checks.number) score += 2;
+                if (checks.special) score += 3;
+
+                if (checks.lowercase && checks.uppercase && checks.number) score += 2;
+                if ((checks.lowercase || checks.uppercase) && checks.special) score += 2;
+
+                return {
+                    score,
+                    checks
+                };
+            }
+
+            function getMissingSuggestions(checks) {
+                const missing = [];
+
+                if (!checks.length12) missing.push("Use at least 12 characters");
+                if (!checks.uppercase) missing.push("Add uppercase letters (A-Z)");
+                if (!checks.lowercase) missing.push("Add lowercase letters (a-z)");
+                if (!checks.number) missing.push("Include numbers (0-9)");
+                if (!checks.special) missing.push("Add special characters (!@#$%^&*)");
+
+                return missing.length > 0 ? missing : ["Looking good! Keep going or add more variety"];
+            }
+
+            function updateStrengthIndicator() {
+                const password = passwordInput.value;
+                const {
+                    score,
+                    checks
+                } = calculatePasswordStrength(password);
+
+                let currentLevel = strengthLevels.find(level => score >= level.min) || strengthLevels[0];
+
+                // Update strength display
+                strengthText.textContent = currentLevel.text;
+                strengthText.className = `password-strength strength-${currentLevel.class}`;
+                strengthFill.className = `strength-fill ${currentLevel.fillClass}`;
+                strengthFill.style.width = currentLevel.width;
+
+                // Update suggestions
+                const suggestions = getMissingSuggestions(checks);
+                suggestionList.innerHTML = '';
+                suggestions.forEach(suggestion => {
+                    const li = document.createElement('li');
+                    li.textContent = suggestion;
+                    suggestionList.appendChild(li);
+                });
+
+                // Show/hide tips box
+                tipsBox.style.display = (score < 9) ? 'block' : 'none';
+
+                // Button state
+                registerButton.disabled = score < 6;
+            }
 
             function showFeedback(message, isSuccess = false) {
                 feedbackMessage.textContent = message;
@@ -60,12 +265,24 @@
                 feedbackMessage.className = `feedback-message ${isSuccess ? 'feedback-success' : 'feedback-error'}`;
             }
 
+            passwordInput.addEventListener('input', updateStrengthIndicator);
+
             registerForm.addEventListener('submit', async function(event) {
-                event.preventDefault(); // Prevents the browser from navigating to the raw JSON page
+                event.preventDefault();
+
                 const username = document.getElementById('username').value;
                 const password = document.getElementById('password').value;
+                const {
+                    score
+                } = calculatePasswordStrength(password);
+
+                if (score < 6) {
+                    showFeedback("Please make your password stronger before continuing.");
+                    return;
+                }
 
                 const revertButton = addLoadingState(registerButton, 'Registering...');
+
                 try {
                     const response = await fetch('/register', {
                         method: 'POST',
@@ -77,18 +294,17 @@
                             password
                         })
                     });
+
                     const data = await response.json();
+
                     if (response.ok) {
                         showFeedback(data.message || 'Registration successful!', true);
-                        // This is the part that redirects you to the login page
-                        setTimeout(() => {
-                            window.location.href = '/login';
-                        }, 1000);
+                        setTimeout(() => window.location.href = '/login', 1200);
                     } else {
                         showFeedback(data.error || 'Registration failed.');
                     }
                 } catch (error) {
-                    showFeedback(`Error: Unable to connect to the server.`);
+                    showFeedback('Error: Unable to connect to the server.');
                 } finally {
                     revertButton();
                 }
