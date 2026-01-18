@@ -469,63 +469,76 @@ def draft_pdf_route():
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-               # ← explicit width is more reliable anyway
 
-    # Use pre-downloaded DejaVu fonts if available
-    use_dejavu = False
-    if os.path.exists(REGULAR_FONT):
+    # Font setup
+    use_dejavu = os.path.exists(REGULAR_FONT)
+    if use_dejavu:
         pdf.add_font('DejaVu', '', REGULAR_FONT, uni=True)
         pdf.add_font('DejaVu', 'B', BOLD_FONT if os.path.exists(BOLD_FONT) else REGULAR_FONT, uni=True)
-        use_dejavu = True
 
-    # Title
-    pdf.set_font('DejaVu' if use_dejavu else 'Helvetica', 'B', 18)
+    font_family = 'DejaVu' if use_dejavu else 'Helvetica'
+
+    # ─── Helper ────────────────────────────────────────
+    def safe_name(name, max_chars=70):
+        name = str(name or '________________________')
+        if len(name) > max_chars:
+            return name[:max_chars-3] + '...'
+        return name
+
+    # ─── Content ────────────────────────────────────────
+    pdf.set_font(font_family, 'B', 18)
     pdf.cell(0, 15, 'RENTAL AGREEMENT', ln=True, align='C')
     pdf.ln(10)
 
-    # Body
-    pdf.set_font('DejaVu' if use_dejavu else 'Helvetica', size=12)
+    pdf.set_font(font_family, size=12)
     pdf.multi_cell(0, 10, f"This Rental Agreement is made on {data.get('agreement_date', '____________')}")
 
     pdf.ln(8)
     pdf.multi_cell(0, 10, "BETWEEN")
-    pdf.set_font('DejaVu' if use_dejavu else 'Helvetica', 'B', 12)
-    pdf.multi_cell(0, 10, f"{data.get('landlord_name', '________________________')} (LANDLORD)",align='C')
-    pdf.set_font('DejaVu' if use_dejavu else 'Helvetica', size=12)
+
+    pdf.set_font(font_family, 'B', 12)
+    pdf.multi_cell(0, 10,
+                   f"{safe_name(data.get('landlord_name'))} (LANDLORD)",
+                   align='C')
+
+    pdf.set_font(font_family, size=12)
     pdf.ln(5)
     pdf.multi_cell(0, 10, "AND")
-    pdf.set_font('DejaVu' if use_dejavu else 'Helvetica', 'B', 12)
-    pdf.multi_cell(0, 10, f"{data.get('tenant_name', '________________________')} (TENANT)",align='C')
+
+    pdf.set_font(font_family, 'B', 12)
+    pdf.multi_cell(0, 10,
+                   f"{safe_name(data.get('tenant_name'))} (TENANT)",
+                   align='C')
 
     pdf.ln(12)
-    pdf.set_font('DejaVu' if use_dejavu else 'Helvetica', size=12)
+    pdf.set_font(font_family, size=12)
     pdf.multi_cell(0, 10, f"Property: {data.get('property_address', 'Full Address')}")
 
     pdf.ln(12)
-    pdf.set_font('DejaVu' if use_dejavu else 'Helvetica', 'B', 13)
+    pdf.set_font(font_family, 'B', 13)
     pdf.multi_cell(0, 10, f"1. Lease Term       : {data.get('term_months', '11')} months")
     pdf.multi_cell(0, 10, f"2. Monthly Rent     : ₹ {data.get('rent_amount', '0')}/-")
     pdf.multi_cell(0, 10, f"3. Security Deposit : ₹ {data.get('deposit_amount', '0')}/-")
 
     if additional_clauses:
         pdf.ln(10)
-        pdf.set_font('DejaVu' if use_dejavu else 'Helvetica', size=11)
+        pdf.set_font(font_family, size=11)
         import textwrap
-        for line in additional_clauses.split('\n'):
-            if line.strip():
-                pdf.multi_cell(0, 8, textwrap.fill(line, width=100))
+        for line in additional_clauses.splitlines():
+            line = line.strip()
+            if line:
+                pdf.multi_cell(0, 8, textwrap.fill(line, width=95))
 
     pdf.ln(30)
-    pdf.set_font('DejaVu' if use_dejavu else 'Helvetica', size=12)
+    pdf.set_font(font_family, size=12)
     pdf.multi_cell(0, 10, "IN WITNESS WHEREOF, the parties have signed this agreement.")
 
     pdf.ln(35)
     pdf.multi_cell(0, 10, "_____________________________          _____________________________")
     pdf.multi_cell(0, 10, "LANDLORD                                                 TENANT")
 
-    # Output as clean bytes
-    pdf_string = pdf.output(dest='S')              # Gets the PDF as string
-    pdf_bytes = pdf_string.encode('latin-1')
+    # Output
+    pdf_bytes = pdf.output(dest='S').encode('latin-1')
 
     return send_file(
         io.BytesIO(pdf_bytes),
