@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://demystilex.onrender.com" alt="DemystiLex" width="100%"/>
+ <i align="center" href="https://demystilex.onrender.com"> Demystilex</i>
   <br><br>
   <h1>🧠 DemystiLex</h1>
   <h3>Legal documents finally made simple • AI-powered • Bengaluru vibes</h3>
@@ -62,5 +62,6 @@ mkdir -p uploads instance
 
 # 7. Run the application 🎉
 python app.py
+
 
 
