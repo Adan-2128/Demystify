@@ -1,5 +1,5 @@
 <p align="center">
- <i align="center" href="https://demystilex.onrender.com"> Demystilex</i>
+ <a align="center" href="https://demystilex.onrender.com"> <i>Demystilex</i></a>
   <br><br>
   <h1>🧠 DemystiLex</h1>
   <h3>Legal documents finally made simple • AI-powered • Bengaluru vibes</h3>
@@ -62,6 +62,7 @@ mkdir -p uploads instance
 
 # 7. Run the application 🎉
 python app.py
+
 
 
 
