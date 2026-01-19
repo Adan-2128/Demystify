@@ -16,7 +16,7 @@
 
 <p align="center">
   <strong>Say goodbye to scary legal documents and confusing clauses forever!</strong><br>
-  <em>"Bhaiya yeh paragraph ka matlab kya hai?" → never again.</em>
+  <em>"Is this document trust worthy to sign?" → never again.</em>
 </p>
 
 <br>
@@ -62,4 +62,5 @@ mkdir -p uploads instance
 
 # 7. Run the application 🎉
 python app.py
+
 
