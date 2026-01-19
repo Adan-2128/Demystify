@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://via.placeholder.com/1200x300/8B5CF6/FFFFFF?text=DemystiLex+-+Legal+Made+Simple" alt="DemystiLex Banner" width="100%"/>
+  <img src="https://demystilex.onrender.com" alt="DemystiLex" width="100%"/>
   <br><br>
   <h1>🧠 DemystiLex</h1>
   <h3>Legal documents finally made simple • AI-powered • Bengaluru vibes</h3>
@@ -62,3 +62,4 @@ mkdir -p uploads instance
 
 # 7. Run the application 🎉
 python app.py
+
